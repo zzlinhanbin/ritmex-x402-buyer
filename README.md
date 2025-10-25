@@ -2,7 +2,7 @@
 
 Automated buyer script for x402 paywalled resources. The tool discovers payment requirements, prepares the payment header, submits the paid request, and prints a readable summary of costs, balances, and responses.
 
-**Looking for Chinese docs?** See [README_cn.md](README_cn.md).
+**看不懂英文？** 前往 [中文文档](README_cn.md).
 
 ## Prerequisites
 
