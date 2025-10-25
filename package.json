@@ -1,0 +1,28 @@
+{
+  "name": "ritmex-x402-buyer",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "start": "bun run index.ts"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.38.0",
+    "@types/bun": "latest",
+    "eslint": "^9.38.0",
+    "globals": "^16.4.0",
+    "jiti": "^2.6.1",
+    "typescript-eslint": "^8.46.2"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "chalk": "^5.6.2",
+    "dotenv": "^17.2.3",
+    "viem": "^2.38.4",
+    "x402-fetch": "^0.6.6"
+  }
+}
