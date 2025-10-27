@@ -6,7 +6,10 @@
   "scripts": {
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "start": "bun run index.ts"
+    "start": "bun run index.ts",
+    "build": "bun build index.ts --outdir=dist --target=node",
+    "dev": "bun run index.ts",
+    "vercel-build": "bun run build"
   },
   "devDependencies": {
     "@eslint/js": "^9.38.0",

@@ -1,3 +1,4 @@
+import type { VercelRequest, VercelResponse } from '@vercel/node';
 import chalk from "chalk";
 import { config as loadEnv } from "dotenv";
 import type { Address, Hex } from "viem";
@@ -15,15 +16,6 @@ import {
 } from "x402/types";
 
 loadEnv();
-
-interface CliOptions {
-  baseUrl?: string;
-  path?: string;
-  network?: string;
-  interval?: number;
-  count?: number;
-  method?: string;
-}
 
 interface AppConfig {
   privateKey: Hex | string;
@@ -112,10 +104,36 @@ type EvmClient = ConnectedClient & {
   readContract: (args: ReadContractArgs) => Promise<unknown>;
 };
 
-const cliOptions = parseCliArgs(process.argv.slice(2));
-const appConfig = buildConfig(cliOptions);
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  // 设置CORS头
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-PAYMENT');
 
-async function run(): Promise<void> {
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  try {
+    const appConfig = buildConfig();
+    const result = await runX402Test(appConfig);
+    
+    res.status(200).json({
+      success: true,
+      data: result,
+      message: "x402 payment test completed successfully"
+    });
+  } catch (error) {
+    console.error('Error:', error);
+    res.status(500).json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      message: "x402 payment test failed"
+    });
+  }
+}
+
+async function runX402Test(appConfig: AppConfig): Promise<RunResult[]> {
   const targetUrl = buildUrl(appConfig.baseUrl, appConfig.endpointPath);
   console.log(chalk.bold("▶ Initializing x402 buyer"));
   console.log(`${chalk.gray(" •")} ${chalk.white("Network")}: ${chalk.yellow(appConfig.network)}`);
@@ -129,8 +147,8 @@ async function run(): Promise<void> {
   const walletAddress = await resolveWalletAddress(signer);
   console.log(`${chalk.gray(" •")} ${chalk.white("Wallet")}: ${chalk.green(walletAddress)}`);
 
+  const results: RunResult[] = [];
   const spendTotals = new Map<string, AggregatedSpend>();
-  let lastResult: RunResult | undefined;
 
   for (let index = 0; index < appConfig.requestCount; index += 1) {
     const context: RequestContext = {
@@ -145,8 +163,8 @@ async function run(): Promise<void> {
     };
 
     const result = await performPaidRequest(context);
+    results.push(result);
     displayRunSummary(result);
-    lastResult = result;
 
     if (
       !result.error &&
@@ -187,114 +205,22 @@ async function run(): Promise<void> {
     }
   }
 
-  if (lastResult?.balanceAfter && lastResult.assetSymbol) {
-    console.log(
-      `${chalk.gray(" •")} ${chalk.white("Final Balance")}: ${chalk.blue(lastResult.balanceAfter.formatted)} ${lastResult.assetSymbol}`,
-    );
-  }
+  return results;
 }
 
-run().catch(error => {
-  console.error(chalk.red(error instanceof Error ? error.message : String(error)));
-  process.exit(1);
-});
-
-function parseCliArgs(args: string[]): CliOptions {
-  const options: CliOptions = {};
-  const shortAliases: Record<string, string> = {
-    u: "base-url",
-    p: "path",
-    n: "network",
-    i: "interval",
-    c: "count",
-    m: "method",
-  };
-  const optionMap: Record<string, keyof CliOptions> = {
-    "base-url": "baseUrl",
-    url: "baseUrl",
-    "resource-server-url": "baseUrl",
-    path: "path",
-    "endpoint-path": "path",
-    network: "network",
-    interval: "interval",
-    "interval-ms": "interval",
-    "poll-interval": "interval",
-    count: "count",
-    requests: "count",
-    method: "method",
-  };
-
-  for (let index = 0; index < args.length; index += 1) {
-    const token = args[index];
-    if (!token) {
-      continue;
-    }
-    if (!token.startsWith("-")) {
-      continue;
-    }
-
-    let flag: string;
-    let value: string | undefined;
-
-    if (token.startsWith("--")) {
-      const [name, maybeValue] = token.slice(2).split(/=(.+)/, 2);
-      if (!name) {
-        continue;
-      }
-      flag = name.toLowerCase();
-      value = maybeValue;
-    } else {
-      const alias = token.slice(1);
-      flag = (shortAliases[alias] ?? alias).toLowerCase();
-    }
-
-    const key = optionMap[flag as keyof typeof optionMap];
-    if (!key) {
-      continue;
-    }
-
-    if (value === undefined) {
-      const next = args[index + 1];
-      if (next && !next.startsWith("-")) {
-        value = next;
-        index += 1;
-      }
-    }
-
-    if (value === undefined) {
-      continue;
-    }
-
-    if (key === "interval" || key === "count") {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) {
-        options[key] = numeric;
-      } else {
-        console.warn(`Ignoring invalid numeric value for --${flag}: ${value}`);
-      }
-      continue;
-    }
-
-    options[key] = value;
-  }
-
-  return options;
-}
-
-function buildConfig(cli: CliOptions): AppConfig {
+function buildConfig(): AppConfig {
   const privateKey = process.env.PRIVATE_KEY as Hex | string | undefined;
-  const baseUrl = cli.baseUrl ?? process.env.RESOURCE_SERVER_URL ?? "";
-  const endpointPath = cli.path ?? process.env.ENDPOINT_PATH ?? "/";
-  const networkInput = cli.network ?? process.env.NETWORK ?? "base-sepolia";
+  const baseUrl = process.env.RESOURCE_SERVER_URL ?? "";
+  const endpointPath = process.env.ENDPOINT_PATH ?? "/";
+  const networkInput = process.env.NETWORK ?? "base-sepolia";
   const network = parseNetwork(networkInput);
-  const pollIntervalMs = resolveNumber(cli.interval, process.env.POLL_INTERVAL_MS, 2000);
-  const requestCount = resolveNumber(cli.count, process.env.REQUEST_COUNT, 1);
-  const method = (cli.method ?? process.env.HTTP_METHOD ?? "GET").toUpperCase();
+  const pollIntervalMs = resolveNumber(process.env.POLL_INTERVAL_MS, 2000);
+  const requestCount = resolveNumber(process.env.REQUEST_COUNT, 1);
+  const method = (process.env.HTTP_METHOD ?? "GET").toUpperCase();
 
   const missing: string[] = [];
   if (!privateKey) missing.push("PRIVATE_KEY");
-  if (!baseUrl) missing.push("RESOURCE_SERVER_URL or --base-url");
-  if (!endpointPath) missing.push("ENDPOINT_PATH or --path");
+  if (!baseUrl) missing.push("RESOURCE_SERVER_URL");
 
   if (missing.length > 0) {
     throw new Error(`Missing required configuration: ${missing.join(", ")}`);
@@ -317,10 +243,7 @@ function buildConfig(cli: CliOptions): AppConfig {
   };
 }
 
-function resolveNumber(cliValue: number | undefined, envValue: string | undefined, fallback: number): number {
-  if (cliValue !== undefined) {
-    return cliValue;
-  }
+function resolveNumber(envValue: string | undefined, fallback: number): number {
   if (envValue !== undefined) {
     const numeric = Number(envValue);
     if (Number.isFinite(numeric)) {
