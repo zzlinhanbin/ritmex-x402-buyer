@@ -1,4 +1,11 @@
 {
+  "version": 2,
+  "functions": {
+    "index.js": {
+      "memory": 128,
+      "maxDuration": 10
+    }
+  },
   "rewrites": [
     {
       "source": "/(.*)",
